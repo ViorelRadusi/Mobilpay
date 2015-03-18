@@ -17,7 +17,13 @@ class Mobilpay {
 
   public function __construct($config) {
     $this->settings = new Collection($config);
-    $this->handleConfirm();
+    $this->handleStatus();
+  }
+
+  public function getOrderId(){
+    $response = $this->getResponse();
+    return $response->orderId;
+
   }
 
   public function makePayment($type, $orderId, $amount, $currency = 'RON', $details = '', array $billing = array(), array $shipping = array(), $installments = '2,3') {
@@ -55,7 +61,8 @@ class Mobilpay {
           $errorMessage = $response->notify->getCrc();
           $orderId      = $response->orderId;
 
-          Event::fire('mobilpay.confirmation', compact('orderId', 'response', 'errorType', 'errorCode', 'errorMessage'));
+          Event::fire('mobilpay.status', compact('orderId', 'response'));
+          Event::fire('mobilpay.confirm', compact('orderId', 'response', 'errorType', 'errorCode', 'errorMessage'));
         }
         else
         {
@@ -113,8 +120,8 @@ class Mobilpay {
 
   protected function makeAddress(array $info = []) {
     $props   = ['type', 'firstName', 'lastName', 'fiscalNumber', 'identityNumber', 'country', 'county', 'city', 'zipCode', 'adddress', 'email', 'mobilePhone', 'bank', 'iban'];
-    $info    = new Collection($info);
 
+    $info    = new Collection($info);
     $address = new Address();
 
     foreach ($props as $prop)
@@ -123,12 +130,14 @@ class Mobilpay {
     return $address;
   }
 
-  protected function handleConfirm(){
-    Event::listen('mobilpay.confirmation', function($orderId, $response, $errorType, $errorCode, $errorMessage){
-      $model = "\\" . $this->settings->get('model');
-      if($orderId)
-        $model::find($orderId)->update([ $this->settings->get('status') => $response->notify->action ]);
-    });
+  protected function handleStatus(){
+    if($this->settings->get('updateStatusDB')) {
+      Event::listen('mobilpay.status', function($orderId, $response){
+        $model = $this->settings->get('model');
+        if($orderId)
+          $model::find($orderId)->update([ $this->settings->get('status') => $response->notify->action ]);
+      });
+    }
   }
 
   protected function getPublicCert() {
